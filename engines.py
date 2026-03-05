@@ -708,6 +708,29 @@ def generate_signal(
 #  ENGINE 11: RISK MANAGEMENT
 # ════════════════════════════════════════════
 
+def _nearest_swing_low(candles: list[Candle], lookback: int = 20) -> float:
+    """
+    Cari swing low TERDEKAT dalam N candle terakhir.
+    Lebih relevan dari swing low global yang bisa sangat jauh.
+    """
+    recent = candles[-lookback:] if len(candles) >= lookback else candles
+    pivots = find_pivot_lows(np.array([c.low for c in recent]), window=3)
+    if pivots:
+        # Ambil swing low paling dekat (index tertinggi = paling recent)
+        return pivots[-1][1]
+    # Fallback: low terendah dari 5 candle terakhir
+    return min(c.low for c in candles[-5:])
+
+
+def _nearest_swing_high(candles: list[Candle], lookback: int = 20) -> float:
+    """Cari swing high TERDEKAT dalam N candle terakhir."""
+    recent = candles[-lookback:] if len(candles) >= lookback else candles
+    pivots = find_pivot_highs(np.array([c.high for c in recent]), window=3)
+    if pivots:
+        return pivots[-1][1]
+    return max(c.high for c in candles[-5:])
+
+
 def risk_engine(
     candles:   list[Candle],
     structure: StructureResult,
@@ -719,22 +742,51 @@ def risk_engine(
     entry = last.close
     atr   = calc_atr(candles, 14)[-1]
 
+    # Batas max SL: 7% dari entry (tidak boleh lebih jauh)
+    MAX_SL_PCT = 0.07
+    # Minimum SL: 1x ATR dari entry (tidak boleh terlalu ketat)
+    MIN_SL_DIST = atr * 1.0
+
     if signal == Signal.BUY:
-        sl  = min(structure.swing_low,  entry - atr * 1.5)
-        tp1 = entry + (entry - sl) * 2
-        tp2 = entry + (entry - sl) * 3
+        # Gunakan swing low TERDEKAT (20 candle), bukan global swing low
+        nearest_sl = _nearest_swing_low(candles, lookback=20)
+        buffer     = atr * 0.3   # sedikit di bawah swing low
+        sl_raw     = nearest_sl - buffer
+
+        # Cap: SL tidak boleh lebih dari 7% di bawah entry
+        sl_min_cap = entry * (1 - MAX_SL_PCT)
+        sl = max(sl_raw, sl_min_cap)
+
+        # Floor: SL minimal 1 ATR di bawah entry (tidak terlalu ketat)
+        sl = min(sl, entry - MIN_SL_DIST)
+
+        sl_dist = entry - sl
+        tp1 = entry + sl_dist * 2   # RR 1:2
+        tp2 = entry + sl_dist * 3   # RR 1:3
+
     elif signal == Signal.SELL:
-        sl  = max(structure.swing_high, entry + atr * 1.5)
-        tp1 = entry - (sl - entry) * 2
-        tp2 = entry - (sl - entry) * 3
+        nearest_sh = _nearest_swing_high(candles, lookback=20)
+        buffer     = atr * 0.3
+        sl_raw     = nearest_sh + buffer
+
+        sl_max_cap = entry * (1 + MAX_SL_PCT)
+        sl = min(sl_raw, sl_max_cap)
+        sl = max(sl, entry + MIN_SL_DIST)
+
+        sl_dist = sl - entry
+        tp1 = entry - sl_dist * 2
+        tp2 = entry - sl_dist * 3
+
     else:
-        sl  = entry * 0.98
-        tp1 = entry * 1.04
-        tp2 = entry * 1.06
+        # WAIT: gunakan ATR sederhana
+        sl_dist = atr * 1.5
+        sl  = entry - sl_dist
+        tp1 = entry + sl_dist * 2
+        tp2 = entry + sl_dist * 3
 
     sl_dist  = abs(entry - sl)
-    rr1      = abs(tp1 - entry) / sl_dist if sl_dist > 0 else 2.0
-    rr2      = abs(tp2 - entry) / sl_dist if sl_dist > 0 else 3.0
+    rr1      = round(abs(tp1 - entry) / sl_dist, 2) if sl_dist > 0 else 2.0
+    rr2      = round(abs(tp2 - entry) / sl_dist, 2) if sl_dist > 0 else 3.0
     risk_idr = capital * risk_pct
     lot_size = int((risk_idr / sl_dist) / 100) * 100 if sl_dist > 0 else 0
 
@@ -743,8 +795,8 @@ def risk_engine(
         stop_loss=round(sl, 0),
         tp1=round(tp1, 0),
         tp2=round(tp2, 0),
-        rr1=round(rr1, 2),
-        rr2=round(rr2, 2),
+        rr1=rr1,
+        rr2=rr2,
         lot_size=max(100, lot_size),
         risk_idr=round(risk_idr, 0),
     )
