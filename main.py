@@ -29,7 +29,7 @@ scheduler = BackgroundScheduler()
 
 def auto_scan():
     try:
-        candles_map = fetch_batch(IDX_UNIVERSE, "1d")
+        candles_map = fetch_batch(IDX_UNIVERSE, "1D")
         for ticker in IDX_UNIVERSE:
             if ticker not in candles_map:
                 continue
@@ -83,7 +83,7 @@ def ihsg():
 
 @app.get("/scan")
 def scan(signal: str = None, min_score: int = 70, timeframe: str = "1d", notify: bool = False):
-    candles_map = fetch_batch(IDX_UNIVERSE, timeframe)
+    candles_map = fetch_batch(IDX_UNIVERSE, timeframe.upper())
     results = []
     for ticker in IDX_UNIVERSE:
         if ticker not in candles_map:
@@ -108,7 +108,7 @@ def scan(signal: str = None, min_score: int = 70, timeframe: str = "1d", notify:
 
 @app.get("/ranking")
 def ranking(top_n: int = 10):
-    candles_map = fetch_batch(IDX_UNIVERSE, "1d")
+    candles_map = fetch_batch(IDX_UNIVERSE, "1D")
     results = []
     for ticker in IDX_UNIVERSE:
         if ticker not in candles_map:
