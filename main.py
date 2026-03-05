@@ -29,12 +29,13 @@ scheduler = BackgroundScheduler()
 
 def auto_scan():
     try:
+        ihsg_candles = fetch_ihsg()
         candles_map = fetch_batch(IDX_UNIVERSE, "1D")
         for ticker in IDX_UNIVERSE:
             if ticker not in candles_map:
                 continue
-            result = analyze_stock(ticker, ticker, candles_map[ticker], CAPITAL, RISK_PER_TRADE)
-            if notifier and result.signal != Signal.WAIT and result.score.total >= 70:
+            result = analyze_stock(ticker, ticker, candles_map[ticker], ihsg_candles, CAPITAL)
+            if result and notifier and result.signal != Signal.WAIT and result.score.total >= 70:
                 notifier.send_signal(result)
     except Exception as e:
         logger.error(f"Auto scan error: {e}")
@@ -46,12 +47,12 @@ async def lifespan(app: FastAPI):
     yield
     scheduler.shutdown()
 
-app = FastAPI(title="IHSG AI Trader", version="4.0.0", lifespan=lifespan)
+app = FastAPI(title="IHSG AI Trader", version="5.0.0", lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 @app.get("/")
 def root():
-    return {"app": "IHSG AI Trader", "status": "online", "notifier": notifier is not None}
+    return {"app": "IHSG AI Trader", "version": "5.0.0", "status": "online", "notifier": notifier is not None}
 
 @app.get("/health")
 def health():
@@ -82,14 +83,17 @@ def ihsg():
     return {"regime": regime.regime.value, "price": regime.price, "ma20": regime.ma20, "ma50": regime.ma50}
 
 @app.get("/scan")
-def scan(signal: str = None, min_score: int = 70, timeframe: str = "1d", notify: bool = False):
+def scan(signal: str = None, min_score: int = 70, timeframe: str = "1D", notify: bool = False):
+    ihsg_candles = fetch_ihsg()
     candles_map = fetch_batch(IDX_UNIVERSE, timeframe.upper())
     results = []
     for ticker in IDX_UNIVERSE:
         if ticker not in candles_map:
             continue
-        result = analyze_stock(ticker, ticker, candles_map[ticker], CAPITAL, RISK_PER_TRADE)
-        results.append(result)
+        result = analyze_stock(ticker, ticker, candles_map[ticker], ihsg_candles, CAPITAL)
+        if result:
+            results.append(result)
+    logger.info(f"Scan complete: {len(results)} results")
     filtered = [r for r in results if r.score.total >= min_score]
     if signal:
         filtered = [r for r in filtered if r.signal.value == signal.upper()]
@@ -108,13 +112,15 @@ def scan(signal: str = None, min_score: int = 70, timeframe: str = "1d", notify:
 
 @app.get("/ranking")
 def ranking(top_n: int = 10):
+    ihsg_candles = fetch_ihsg()
     candles_map = fetch_batch(IDX_UNIVERSE, "1D")
     results = []
     for ticker in IDX_UNIVERSE:
         if ticker not in candles_map:
             continue
-        result = analyze_stock(ticker, ticker, candles_map[ticker], CAPITAL, RISK_PER_TRADE)
-        results.append(result)
+        result = analyze_stock(ticker, ticker, candles_map[ticker], ihsg_candles, CAPITAL)
+        if result:
+            results.append(result)
     ranked = sorted(results, key=lambda r: r.score.total, reverse=True)[:top_n]
     return {
         "timestamp": datetime.now().isoformat(),
@@ -126,10 +132,11 @@ async def webhook(payload: dict):
     if payload.get("secret") != WEBHOOK_SECRET:
         return {"status": "error", "message": "Invalid secret"}
     ticker = payload.get("ticker", "").replace(".JK", "")
-    candles = fetch_candles(ticker, "1d")
+    candles = fetch_candles(ticker, "1D")
+    ihsg_candles = fetch_ihsg()
     if not candles:
         return {"status": "error", "message": "No data"}
-    result = analyze_stock(ticker, ticker, candles, CAPITAL, RISK_PER_TRADE)
-    if notifier and result.signal != Signal.WAIT and result.score.total >= 70:
+    result = analyze_stock(ticker, ticker, candles, ihsg_candles, CAPITAL)
+    if result and notifier and result.signal != Signal.WAIT and result.score.total >= 70:
         notifier.send_signal(result)
-    return {"status": "ok", "signal": result.signal.value, "score": result.score.total}
+    return {"status": "ok", "signal": result.signal.value if result else "WAIT"}
