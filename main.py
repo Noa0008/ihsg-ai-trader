@@ -72,11 +72,11 @@ def _serialize_result(r):
         "tp1":       r.risk.tp1,
         "tp2":       r.risk.tp2,
         "rr1":       r.risk.rr1,
-        "regime":    r.regime.value if hasattr(r.regime, 'value') else str(r.regime),
-        "trend":     r.trend.value if hasattr(r.trend, 'value') else str(r.trend),
-        "rel_vol":   r.rel_vol,
-        "pattern":   r.pattern,
-        "mtf":       r.mtf,
+        "regime":    r.regime.regime.value if hasattr(r.regime, 'regime') else str(r.regime),
+        "trend":     r.structure.trend.value if hasattr(r.structure, 'trend') else "N/A",
+        "rel_vol":   r.volume.rel_vol if hasattr(r, 'volume') else 0,
+        "pattern":   r.candle.pattern if hasattr(r, 'candle') else "N/A",
+        "mtf":       r.mtf_alignment,
         "scanned_at": datetime.now().isoformat(),
     }
 
