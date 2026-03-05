@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from apscheduler.schedulers.background import BackgroundScheduler
 
-from engines import analyze_stock, Signal, detect_market_regime
+from engines import analyze_stock, Signal, market_regime_engine
 from data_feed import IDX_UNIVERSE, fetch_batch, fetch_ihsg, fetch_multi_timeframe
 from notifier import TelegramNotifier
 
@@ -85,7 +85,7 @@ def test_telegram():
 def ihsg():
     candles = fetch_ihsg()
     from engines import detect_market_regime
-    regime = detect_market_regime(candles)
+    regime = market_regime_engine(candles)
     return {"regime": regime.regime.value, "price": regime.price, "ma20": regime.ma20, "ma50": regime.ma50, "dist_ma50": regime.dist_ma50, "timestamp": datetime.now().isoformat()}
 
 @app.get("/scan")
