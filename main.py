@@ -1,7 +1,7 @@
 import os, logging
 from datetime import datetime
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from apscheduler.schedulers.background import BackgroundScheduler
 from engines import analyze_stock, Signal, market_regime_engine
@@ -27,32 +27,56 @@ else:
 
 scheduler = BackgroundScheduler()
 
-def auto_scan():
+# ── Simpan hasil scan terakhir ─────────────────────────────────────────────────
+last_scan_results = []
+last_scan_time = None
+scan_running = False
+
+def run_scan_job(min_score: int = 70, notify: bool = True):
+    global last_scan_results, last_scan_time, scan_running
+    if scan_running:
+        logger.info("Scan already running, skip")
+        return
+    scan_running = True
     try:
+        logger.info(f"Scan start: {len(IDX_UNIVERSE)} symbols")
         ihsg_candles = fetch_ihsg()
         candles_map = fetch_batch(IDX_UNIVERSE, "1D")
+        results = []
         for ticker in IDX_UNIVERSE:
             if ticker not in candles_map:
                 continue
             result = analyze_stock(ticker, ticker, candles_map[ticker], ihsg_candles, CAPITAL)
-            if result and notifier and result.signal != Signal.WAIT and result.score.total >= 70:
-                notifier.send_signal(result)
+            if result:
+                results.append(result)
+        logger.info(f"Scan complete: {len(results)} results")
+        last_scan_results = results
+        last_scan_time = datetime.now()
+        if notify and notifier:
+            filtered = [r for r in results if r.score.total >= min_score and r.signal != Signal.WAIT]
+            for r in filtered:
+                notifier.send_signal(r)
+            if results:
+                notifier.send_scan_summary(results)
     except Exception as e:
-        logger.error(f"Auto scan error: {e}")
+        logger.error(f"Scan error: {e}")
+    finally:
+        scan_running = False
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    scheduler.add_job(auto_scan, "interval", minutes=SCAN_INTERVAL)
+    scheduler.add_job(run_scan_job, "interval", minutes=SCAN_INTERVAL, kwargs={"notify": True})
     scheduler.start()
+    logger.info("Scheduler started")
     yield
     scheduler.shutdown()
 
-app = FastAPI(title="IHSG AI Trader", version="5.0.0", lifespan=lifespan)
+app = FastAPI(title="IHSG AI Trader", version="6.0.0", lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 @app.get("/")
 def root():
-    return {"app": "IHSG AI Trader", "version": "5.0.0", "status": "online", "notifier": notifier is not None}
+    return {"app": "IHSG AI Trader", "version": "6.0.0", "status": "online", "notifier": notifier is not None}
 
 @app.get("/health")
 def health():
@@ -73,7 +97,7 @@ def debug_env():
 def test_telegram():
     if not notifier:
         return {"status": "error", "message": "Notifier tidak aktif"}
-    result = notifier.send("TEST BERHASIL! IHSG AI Trader aktif!")
+    result = notifier.send("TEST BERHASIL! IHSG AI Trader v6 aktif!")
     return {"status": "ok" if result else "error"}
 
 @app.get("/ihsg")
@@ -83,47 +107,39 @@ def ihsg():
     return {"regime": regime.regime.value, "price": regime.price, "ma20": regime.ma20, "ma50": regime.ma50}
 
 @app.get("/scan")
-def scan(signal: str = None, min_score: int = 70, timeframe: str = "1D", notify: bool = False):
-    ihsg_candles = fetch_ihsg()
-    candles_map = fetch_batch(IDX_UNIVERSE, timeframe.upper())
-    results = []
-    for ticker in IDX_UNIVERSE:
-        if ticker not in candles_map:
-            continue
-        result = analyze_stock(ticker, ticker, candles_map[ticker], ihsg_candles, CAPITAL)
-        if result:
-            results.append(result)
-    logger.info(f"Scan complete: {len(results)} results")
-    filtered = [r for r in results if r.score.total >= min_score]
+def scan(background_tasks: BackgroundTasks, min_score: int = 70, notify: bool = False):
+    global scan_running, last_scan_results, last_scan_time
+    if scan_running:
+        return {"status": "running", "message": "Scan sedang berjalan, cek /results"}
+    background_tasks.add_task(run_scan_job, min_score, notify)
+    return {
+        "status": "started",
+        "message": f"Scan {len(IDX_UNIVERSE)} saham dimulai di background. Cek /results dalam 2-3 menit."
+    }
+
+@app.get("/results")
+def results(min_score: int = 70, signal: str = None):
+    if not last_scan_results:
+        return {"status": "no_data", "message": "Belum ada hasil scan. Akses /scan dulu."}
+    filtered = [r for r in last_scan_results if r.score.total >= min_score]
     if signal:
         filtered = [r for r in filtered if r.signal.value == signal.upper()]
-    if notify and notifier:
-        for r in filtered:
-            if r.signal != Signal.WAIT:
-                notifier.send_signal(r)
-        if results:
-            notifier.send_scan_summary(results)
+    ranked = sorted(filtered, key=lambda r: r.score.total, reverse=True)
     return {
-        "scan_time": datetime.now().isoformat(),
-        "total": len(results),
+        "scan_time": last_scan_time.isoformat() if last_scan_time else None,
+        "total_scanned": len(last_scan_results),
         "filtered": len(filtered),
-        "results": [{"ticker": r.ticker, "score": r.score.total, "signal": r.signal.value} for r in filtered]
+        "scan_running": scan_running,
+        "results": [{"ticker": r.ticker, "score": r.score.total, "signal": r.signal.value, "entry": r.risk.entry} for r in ranked]
     }
 
 @app.get("/ranking")
 def ranking(top_n: int = 10):
-    ihsg_candles = fetch_ihsg()
-    candles_map = fetch_batch(IDX_UNIVERSE, "1D")
-    results = []
-    for ticker in IDX_UNIVERSE:
-        if ticker not in candles_map:
-            continue
-        result = analyze_stock(ticker, ticker, candles_map[ticker], ihsg_candles, CAPITAL)
-        if result:
-            results.append(result)
-    ranked = sorted(results, key=lambda r: r.score.total, reverse=True)[:top_n]
+    if not last_scan_results:
+        return {"status": "no_data", "message": "Belum ada hasil scan. Akses /scan dulu."}
+    ranked = sorted(last_scan_results, key=lambda r: r.score.total, reverse=True)[:top_n]
     return {
-        "timestamp": datetime.now().isoformat(),
+        "timestamp": last_scan_time.isoformat() if last_scan_time else None,
         "results": [{"ticker": r.ticker, "score": r.score.total, "signal": r.signal.value} for r in ranked]
     }
 
