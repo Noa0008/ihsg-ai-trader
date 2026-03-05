@@ -261,14 +261,47 @@ def ranking(top_n: int = 10):
 
 @app.post("/webhook/tradingview")
 async def webhook(payload: dict):
+    # Validasi secret
     if payload.get("secret") != WEBHOOK_SECRET:
+        logger.warning(f"Webhook: invalid secret from {payload.get('ticker','?')}")
         return {"status": "error", "message": "Invalid secret"}
-    ticker = payload.get("ticker", "").replace(".JK", "")
-    candles = fetch_candles(ticker, "1D")
-    ihsg_candles = fetch_ihsg()
+
+    ticker    = payload.get("ticker", "").replace(".JK", "").replace("IDX:", "").strip()
+    timeframe = payload.get("timeframe", "1D")
+    source    = payload.get("source", "tradingview")
+
+    if not ticker:
+        return {"status": "error", "message": "No ticker"}
+
+    logger.info(f"Webhook received: {ticker} ({timeframe}) from {source}")
+
+    # Fetch data & analisis AI
+    from data_feed import fetch_ihsg as fetch_ihsg_yf
+    candles      = fetch_candles(ticker, timeframe)
+    ihsg_candles = fetch_ihsg_yf()
+
     if not candles:
-        return {"status": "error", "message": "No data"}
+        logger.warning(f"Webhook: no data for {ticker}")
+        return {"status": "error", "message": f"No data for {ticker}"}
+
     result = analyze_stock(ticker, ticker, candles, ihsg_candles, CAPITAL)
-    if result and notifier and result.signal != Signal.WAIT and result.score.total >= 70:
+
+    if not result:
+        return {"status": "ok", "signal": "WAIT", "reason": "analysis_failed"}
+
+    # Kirim Telegram jika sinyal kuat
+    if notifier and result.signal != Signal.WAIT and result.score.total >= 70:
         notifier.send_signal(result)
-    return {"status": "ok", "signal": result.signal.value if result else "WAIT"}
+        logger.info(f"Webhook signal sent: {ticker} {result.signal.value} score={result.score.total}")
+
+    return {
+        "status":  "ok",
+        "ticker":  ticker,
+        "signal":  result.signal.value,
+        "score":   result.score.total,
+        "entry":   result.risk.entry,
+        "sl":      result.risk.stop_loss,
+        "tp1":     result.risk.tp1,
+        "tp2":     result.risk.tp2,
+        "pattern": result.candle.pattern,
+    }
