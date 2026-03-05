@@ -241,12 +241,30 @@ def results(min_score: int = 70, signal: str = None):
     if signal:
         filtered = [r for r in filtered if r.signal.value == signal.upper()]
     ranked = sorted(filtered, key=lambda r: r.score.total, reverse=True)
+    def to_dict(r):
+        return {
+            "ticker":    r.ticker,
+            "signal":    r.signal.value,
+            "score":     r.score.total,
+            "price":     r.price,
+            "entry":     r.risk.entry,
+            "stop_loss": r.risk.stop_loss,
+            "tp1":       r.risk.tp1,
+            "tp2":       r.risk.tp2,
+            "rr1":       r.risk.rr1,
+            "regime":    r.regime.regime.value if hasattr(r.regime, "regime") else str(r.regime),
+            "trend":     r.structure.trend.value if hasattr(r.structure, "trend") else "N/A",
+            "rel_vol":   r.volume.rel_vol if hasattr(r, "volume") else 0,
+            "pattern":   r.candle.pattern if hasattr(r, "candle") else "N/A",
+            "mtf":       r.mtf_alignment,
+        }
     return {
-        "scan_time": last_scan_time.isoformat() if last_scan_time else None,
+        "source":        "memory",
+        "scan_time":     last_scan_time.isoformat() if last_scan_time else None,
         "total_scanned": len(last_scan_results),
-        "filtered": len(filtered),
-        "scan_running": scan_running,
-        "results": [{"ticker": r.ticker, "score": r.score.total, "signal": r.signal.value, "entry": r.risk.entry} for r in ranked]
+        "filtered":      len(filtered),
+        "scan_running":  scan_running,
+        "results":       [to_dict(r) for r in ranked],
     }
 
 @app.get("/ranking")
