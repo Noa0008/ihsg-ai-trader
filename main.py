@@ -34,7 +34,7 @@ from engines import analyze_stock, TradeResult, Signal
 from notifier import TelegramNotifier
 
 # ── Config ────────────────────────────────────────────
-load_dotenv()
+# load_dotenv() disabled on Railway
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
