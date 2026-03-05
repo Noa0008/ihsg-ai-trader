@@ -120,7 +120,7 @@ def fetch_ihsg(n_bars: int = 200) -> list[dict]:
     """Fetch data IHSG composite index."""
     if TV_AVAILABLE:
         try:
-            df = _tv.get_hist("IDX", "IDX", interval=Interval.in_daily, n_bars=n_bars)
+            df = _tv.get_hist("COMPOSITE", "IDX", interval=Interval.in_daily, n_bars=n_bars)
             candles = _df_to_candles(df)
             if candles:
                 return candles
