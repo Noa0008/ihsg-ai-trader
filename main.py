@@ -539,3 +539,12 @@ if __name__ == "__main__":
         reload=os.getenv("DEBUG", "false").lower() == "true",
         log_level="info",
     )
+
+@app.get("/test-telegram")
+def test_telegram():
+    """Test kirim pesan Telegram langsung."""
+    if not notifier:
+        return {"status": "error", "message": "Notifier tidak aktif - cek TELEGRAM_TOKEN dan TELEGRAM_CHAT_ID di Variables"}
+    
+    result = notifier.send("🧪 <b>TEST BERHASIL!</b>\nIHSG AI Trader server aktif dan Telegram terhubung! ✅")
+    return {"status": "ok" if result else "error", "sent": result}
