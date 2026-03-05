@@ -174,9 +174,16 @@ def run_scan_job(min_score: int = 70, notify: bool = True, use_screener: bool = 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    scheduler.add_job(run_scan_job, "interval", minutes=SCAN_INTERVAL, kwargs={"notify": True})
+    # Scan langsung saat startup, lalu setiap SCAN_INTERVAL menit
+    scheduler.add_job(
+        run_scan_job,
+        "interval",
+        minutes=SCAN_INTERVAL,
+        kwargs={"notify": True},
+        next_run_time=datetime.now(),  # langsung jalan sekarang
+    )
     scheduler.start()
-    logger.info("Scheduler started")
+    logger.info(f"Scheduler started — scan langsung jalan, lalu setiap {SCAN_INTERVAL} menit")
     yield
     scheduler.shutdown()
 
