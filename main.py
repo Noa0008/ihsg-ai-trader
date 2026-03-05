@@ -548,3 +548,15 @@ def test_telegram():
     
     result = notifier.send("🧪 <b>TEST BERHASIL!</b>\nIHSG AI Trader server aktif dan Telegram terhubung! ✅")
     return {"status": "ok" if result else "error", "sent": result}
+
+@app.get("/debug-env")
+def debug_env():
+    import os
+    token = os.environ.get("TELEGRAM_TOKEN", "NOT_FOUND")
+    chat_id = os.environ.get("TELEGRAM_CHAT_ID", "NOT_FOUND")
+    return {
+        "token_exists": bool(token and token != "NOT_FOUND" and token != "isi_nanti"),
+        "token_preview": token[:15] + "..." if len(token) > 15 else token,
+        "chat_id": chat_id,
+        "notifier_active": notifier is not None,
+    }
