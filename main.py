@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from apscheduler.schedulers.background import BackgroundScheduler
 from engines import analyze_stock, Signal, market_regime_engine
-from data_feed import IDX_UNIVERSE, fetch_batch, fetch_ihsg, fetch_candles
+from data_feed_tv import IDX_UNIVERSE, fetch_batch, fetch_ihsg, fetch_candles
 from notifier import TelegramNotifier
 
 logging.basicConfig(level=logging.INFO)
