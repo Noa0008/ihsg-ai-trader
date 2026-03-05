@@ -148,6 +148,16 @@ def run_scan_job(min_score: int = 70, notify: bool = True):
     try:
         logger.info(f"🔍 Scan start: {len(IDX_UNIVERSE)} symbols")
         ihsg_candles  = fetch_ihsg()
+        if not ihsg_candles:
+            logger.warning("IHSG fetch gagal, pakai fallback dummy regime")
+            from data_feed import fetch_ihsg as fetch_ihsg_yf
+            ihsg_candles = fetch_ihsg_yf()
+        if not ihsg_candles:
+            logger.error("IHSG data kosong total, skip scan")
+            scan_status_state["status"] = "error"
+            scan_status_state["error"] = "IHSG data empty"
+            scan_running = False
+            return
         candles_map   = fetch_batch(IDX_UNIVERSE, "1D")
         results       = []
 
