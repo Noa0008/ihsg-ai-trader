@@ -222,6 +222,14 @@ def ihsg():
     regime = market_regime_engine(candles)
     return {"regime": regime.regime.value, "price": regime.price, "ma20": regime.ma20, "ma50": regime.ma50}
 
+@app.get("/scan/status")
+def get_scan_status():
+    return {
+        **scan_status_state,
+        "scan_interval_min": SCAN_INTERVAL,
+        "last_scan_time": last_scan_time.isoformat() if last_scan_time else None,
+    }
+
 @app.get("/scan")
 def scan(background_tasks: BackgroundTasks, min_score: int = 70, notify: bool = False):
     global scan_running, last_scan_results, last_scan_time
