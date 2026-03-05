@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from apscheduler.schedulers.background import BackgroundScheduler
 
-from engines import run_full_analysis, Signal
+from engines import analyze_stock, Signal, detect_market_regime
 from data_feed import IDX_UNIVERSE, fetch_batch, fetch_ihsg, fetch_multi_timeframe
 from notifier import TelegramNotifier
 
@@ -36,7 +36,7 @@ def auto_scan():
         for ticker, name in IDX_UNIVERSE.items():
             if ticker not in candles_map:
                 continue
-            result = run_full_analysis(ticker, name, candles_map[ticker], CAPITAL, RISK_PER_TRADE)
+            result = analyze_stock(ticker, name, candles_map[ticker], CAPITAL, RISK_PER_TRADE)
             if notifier and result.signal != Signal.WAIT and result.score.total >= 70:
                 notifier.send_signal(result)
     except Exception as e:
@@ -97,7 +97,7 @@ def scan(signal: str = None, min_score: int = 70, timeframe: str = "1d", notify:
     for ticker, name in IDX_UNIVERSE.items():
         if ticker not in candles_map:
             continue
-        result = run_full_analysis(ticker, name, candles_map[ticker], CAPITAL, RISK_PER_TRADE)
+        result = analyze_stock(ticker, name, candles_map[ticker], CAPITAL, RISK_PER_TRADE)
         results.append(result)
     logger.info(f"Scan complete: {len(results)} results")
     filtered = [r for r in results if r.score.total >= min_score]
@@ -118,7 +118,7 @@ def ranking(top_n: int = 10, min_score: int = 70):
     for ticker, name in IDX_UNIVERSE.items():
         if ticker not in candles_map:
             continue
-        result = run_full_analysis(ticker, name, candles_map[ticker], CAPITAL, RISK_PER_TRADE)
+        result = analyze_stock(ticker, name, candles_map[ticker], CAPITAL, RISK_PER_TRADE)
         results.append(result)
     ranked = sorted(results, key=lambda r: r.score.total, reverse=True)[:top_n]
     return {"timestamp": datetime.now().isoformat(), "top_n": top_n, "results": [vars(r) for r in ranked]}
@@ -133,7 +133,7 @@ async def webhook(payload: dict):
     candles = fetch_candles(ticker, "1d")
     if not candles:
         return {"status": "error", "message": "No data"}
-    result = run_full_analysis(ticker, name, candles, CAPITAL, RISK_PER_TRADE)
+    result = analyze_stock(ticker, name, candles, CAPITAL, RISK_PER_TRADE)
     if notifier and result.signal != Signal.WAIT and result.score.total >= 70:
         notifier.send_signal(result)
     return {"status": "ok", "signal": result.signal.value, "score": result.score.total}
