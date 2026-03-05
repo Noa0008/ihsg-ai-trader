@@ -33,7 +33,8 @@ def auto_scan():
     logger.info(f"Auto scan: {len(IDX_UNIVERSE)} symbols")
     try:
         candles_map = fetch_batch(IDX_UNIVERSE, "1d")
-        for ticker, name in IDX_UNIVERSE.items():
+        for ticker in IDX_UNIVERSE:
+        name = ticker
             if ticker not in candles_map:
                 continue
             result = analyze_stock(ticker, name, candles_map[ticker], CAPITAL, RISK_PER_TRADE)
@@ -94,7 +95,8 @@ def scan(signal: str = None, min_score: int = 70, timeframe: str = "1d", notify:
     candles_map = fetch_batch(IDX_UNIVERSE, timeframe)
     logger.info(f"Batch complete: {len(candles_map)}/{len(IDX_UNIVERSE)} symbols")
     results = []
-    for ticker, name in IDX_UNIVERSE.items():
+    for ticker in IDX_UNIVERSE:
+        name = ticker
         if ticker not in candles_map:
             continue
         result = analyze_stock(ticker, name, candles_map[ticker], CAPITAL, RISK_PER_TRADE)
@@ -115,7 +117,8 @@ def scan(signal: str = None, min_score: int = 70, timeframe: str = "1d", notify:
 def ranking(top_n: int = 10, min_score: int = 70):
     candles_map = fetch_batch(IDX_UNIVERSE, "1d")
     results = []
-    for ticker, name in IDX_UNIVERSE.items():
+    for ticker in IDX_UNIVERSE:
+        name = ticker
         if ticker not in candles_map:
             continue
         result = analyze_stock(ticker, name, candles_map[ticker], CAPITAL, RISK_PER_TRADE)
