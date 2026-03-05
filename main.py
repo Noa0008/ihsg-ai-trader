@@ -30,8 +30,70 @@ scheduler = BackgroundScheduler()
 
 # ── Simpan hasil scan terakhir ─────────────────────────────────────────────────
 last_scan_results = []
-last_scan_time = None
-scan_running = False
+last_scan_time    = None
+scan_running      = False
+_file_results     = []
+_file_scan_time   = None
+
+scan_status_state = {
+    "status":       "idle",
+    "started_at":   None,
+    "finished_at":  None,
+    "progress":     0,
+    "total":        0,
+    "current_stock": None,
+    "error":        None,
+}
+
+import json
+from pathlib import Path
+RESULTS_FILE = Path("/app/scan_results.json")
+
+def save_results_to_file(results):
+    try:
+        data = {
+            "scan_time": datetime.now().isoformat(),
+            "total": len(results),
+            "results": [_serialize_result(r) for r in results]
+        }
+        RESULTS_FILE.write_text(json.dumps(data, indent=2))
+        logger.info(f"Results saved to scan_results.json ({len(results)} saham)")
+    except Exception as e:
+        logger.error(f"Save results error: {e}")
+
+def _serialize_result(r):
+    return {
+        "ticker":    r.ticker,
+        "signal":    r.signal.value,
+        "score":     r.score.total,
+        "price":     r.price,
+        "entry":     r.risk.entry,
+        "stop_loss": r.risk.stop_loss,
+        "tp1":       r.risk.tp1,
+        "tp2":       r.risk.tp2,
+        "rr1":       r.risk.rr1,
+        "regime":    r.regime.value if hasattr(r.regime, 'value') else str(r.regime),
+        "trend":     r.trend.value if hasattr(r.trend, 'value') else str(r.trend),
+        "rel_vol":   r.rel_vol,
+        "pattern":   r.pattern,
+        "mtf":       r.mtf,
+        "scanned_at": datetime.now().isoformat(),
+    }
+
+def load_results_from_file():
+    try:
+        if not RESULTS_FILE.exists():
+            return [], None
+        data = json.loads(RESULTS_FILE.read_text())
+        return data.get("results", []), datetime.fromisoformat(data["scan_time"])
+    except Exception as e:
+        logger.error(f"Load results error: {e}")
+        return [], None
+
+def load_results():
+    if last_scan_results:
+        return last_scan_results, last_scan_time
+    return _file_results, _file_scan_time
 
 def run_scan_job(min_score: int = 70, notify: bool = True, use_screener: bool = True):
     global last_scan_results, last_scan_time, scan_running
